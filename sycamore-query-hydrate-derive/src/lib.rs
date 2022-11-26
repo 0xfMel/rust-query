@@ -1,4 +1,8 @@
+use std::collections::HashSet;
+
 use itertools::Itertools;
+use once_cell::sync::Lazy;
+use parking_lot::Mutex;
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span};
 use proc_macro_crate::{crate_name, FoundCrate};
@@ -8,13 +12,20 @@ use syn::{
     AngleBracketedGenericArguments, Data, DeriveInput, Type, TypeTuple,
 };
 
-static KEYS = La
+static KEYS: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
 
 #[proc_macro_derive(HydratableQuery, attributes(result, param))]
 pub fn hydratable_query_derive(input: TokenStream) -> TokenStream {
     let DeriveInput {
         attrs, ident, data, ..
     } = syn::parse_macro_input!(input as DeriveInput);
+    let ident_name = ident.to_string();
+
+    if !KEYS.lock().insert(ident_name.to_string()) {
+        return Error::new_spanned(ident, "duplicate hydratable key")
+            .into_compile_error()
+            .into();
+    }
 
     let wrong_type = match data {
         Data::Struct(_) => None,
@@ -83,13 +94,12 @@ pub fn hydratable_query_derive(input: TokenStream) -> TokenStream {
             let mut iter = r.args.into_iter();
             Ok((iter.next().unwrap(), iter.next().unwrap()))
         }
-        Some(r) if r.args.len() == 0 => Err(r.lt_token.span()),
+        Some(r) if r.args.is_empty() => Err(r.lt_token.span()),
         Some(r) if r.args.len() == 1 => Err(r.gt_token.span()),
         Some(r) => Err(r
             .args
             .iter()
-            .skip(2)
-            .next()
+            .nth(2)
             .unwrap()
             .to_token_stream()
             .into_iter()
@@ -127,7 +137,6 @@ pub fn hydratable_query_derive(input: TokenStream) -> TokenStream {
         FoundCrate::Name(name) => name,
     };
     let crate_ = Ident::new(&crate_, Span::call_site());
-    let ident_name = ident.to_string();
 
     quote::quote! {
         impl HydratableQuery for #ident {

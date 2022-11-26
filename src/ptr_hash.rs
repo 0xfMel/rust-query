@@ -5,23 +5,24 @@ use std::{
     rc::Weak,
 };
 
-pub(crate) struct WeakPtrHash<T: ?Sized>(pub Weak<T>);
+/// Allows the contained [`Weak`] to be hashed using its pointer
+pub struct HashWeakPtr<T: ?Sized>(pub(crate) Weak<T>);
 
-impl<T: ?Sized> Hash for WeakPtrHash<T> {
+impl<T: ?Sized> Hash for HashWeakPtr<T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_usize(self.as_ptr() as *const () as usize);
+        state.write_usize(self.as_ptr().cast::<()>() as usize);
     }
 }
 
-impl<T: ?Sized> PartialEq for WeakPtrHash<T> {
+impl<T: ?Sized> PartialEq for HashWeakPtr<T> {
     fn eq(&self, other: &Self) -> bool {
         self.ptr_eq(other)
     }
 }
 
-impl<T: ?Sized> Eq for WeakPtrHash<T> {}
+impl<T: ?Sized> Eq for HashWeakPtr<T> {}
 
-impl<T: ?Sized> Deref for WeakPtrHash<T> {
+impl<T: ?Sized> Deref for HashWeakPtr<T> {
     type Target = Weak<T>;
 
     fn deref(&self) -> &Self::Target {
@@ -29,29 +30,30 @@ impl<T: ?Sized> Deref for WeakPtrHash<T> {
     }
 }
 
-impl<T: ?Sized> Clone for WeakPtrHash<T> {
+impl<T: ?Sized> Clone for HashWeakPtr<T> {
     fn clone(&self) -> Self {
-        WeakPtrHash(Weak::clone(self))
+        Self(Weak::clone(self))
     }
 }
 
-pub(crate) struct BoxPtrHash<T: ?Sized>(pub Box<T>);
+/// Allows the contained [`Box`] to be hashed using its pointer
+pub struct HashBoxPtr<T: ?Sized>(pub(crate) Box<T>);
 
-impl<T: ?Sized> Hash for BoxPtrHash<T> {
+impl<T: ?Sized> Hash for HashBoxPtr<T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_usize(&*self.0 as *const T as *const () as usize);
+        state.write_usize(ptr::addr_of!(*self.0).cast::<()>() as usize);
     }
 }
 
-impl<T: ?Sized> PartialEq for BoxPtrHash<T> {
+impl<T: ?Sized> PartialEq for HashBoxPtr<T> {
     fn eq(&self, other: &Self) -> bool {
         ptr::eq(&*self.0, &*other.0)
     }
 }
 
-impl<T: ?Sized> Eq for BoxPtrHash<T> {}
+impl<T: ?Sized> Eq for HashBoxPtr<T> {}
 
-impl<T: ?Sized> Deref for BoxPtrHash<T> {
+impl<T: ?Sized> Deref for HashBoxPtr<T> {
     type Target = Box<T>;
 
     fn deref(&self) -> &Self::Target {
