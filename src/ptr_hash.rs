@@ -6,7 +6,7 @@ use std::{
 };
 
 /// Allows the contained [`Weak`] to be hashed using its pointer
-pub struct HashWeakPtr<T: ?Sized>(pub(crate) Weak<T>);
+pub(crate) struct HashWeakPtr<T: ?Sized>(pub(crate) Weak<T>);
 
 impl<T: ?Sized> Hash for HashWeakPtr<T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
@@ -37,7 +37,7 @@ impl<T: ?Sized> Clone for HashWeakPtr<T> {
 }
 
 /// Allows the contained [`Box`] to be hashed using its pointer
-pub struct HashBoxPtr<T: ?Sized>(pub(crate) Box<T>);
+pub(crate) struct HashBoxPtr<T: ?Sized>(pub(crate) Box<T>);
 
 impl<T: ?Sized> Hash for HashBoxPtr<T> {
     fn hash<H: Hasher>(&self, state: &mut H) {

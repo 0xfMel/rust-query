@@ -1,24 +1,39 @@
 [package]
-name = "sycamore-query"
-version = "0.1.0"
+name = "rust-query"
+version = "0.0.0-alpha-1"
 edition = "2021"
 license = "GPL-3.0-or-later"
-repository = "https://github.com/0xfMel/sycamore-query"
-description = "query handling for sycamore"
-keywords = ["fetch", "sycamore", "query", "perseus"]
+repository = "https://github.com/0xfMel/rust-query"
+description = "Query & mutation handling & cacheing for rust web projects"
+keywords = ["fetch", "query", "cache"]
 categories = ["web-programming", "wasm"]
 readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+sycamore = ["dep:sycamore"]
+hydrate = ["hydrate-derive", "serde"]
+hydrate-derive = ["dep:rust-query-hydrate-derive"]
+serde = ["dep:serde"]
+
 [dependencies]
-instant = { version = "0.1.12", features = ["wasm-bindgen"] }
+sycamore = { version = "0.8.2", features = ["suspense"], optional = true }
+rust-query-hydrate-derive = { version = "0.0.0-alpha-1", path = "rust-query-hydrate-derive", optional = true }
+futures = "0.3.25"
+tokio = { version = "1.22.0", features = ["rt", "sync", "macros"] }
+serde = { version = "1.0.149", features = ["derive", "rc"], optional = true }
+log = "0.4.17"
+downcast-rs = "1.2.0"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = "0.3.60"
-sycamore = { version = "0.8.2", features = ["suspense"] }
 wasm-bindgen = "0.2.83"
 wasm-bindgen-futures = "0.4.33"
-web-sys = { version = "0.3.60", features = ["Event", "Navigator", "Window"] }
-sycamore-query-hydrate-derive = { version = "0.1.0", path = "sycamore-query-hydrate-derive" }
+once_cell = "1.16.0"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies.tokio]
+features = ["time"]
 
 [dev-dependencies]
-tokio = { version = "1.22.0", features = ["rt", "macros"] }
+tokio = { version = "1.22.0", features = ["macros"] }

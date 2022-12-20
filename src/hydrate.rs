@@ -1,8 +1,11 @@
+#![cfg(target = "hydrate")]
+
 use std::marker::PhantomData;
 
+use serde::{de::DeserializeOwned, Serialize};
 pub use sycamore_query_hydrate_derive::HydratableQuery;
 
-use crate::Query;
+use crate::{config::error::Error, query::Query};
 
 /// Trait for letting structs safely create a [`HydratableQueryBuilder`]
 ///
@@ -13,7 +16,7 @@ pub unsafe trait HydratableQuery {
     /// Parameter of query
     type Param;
     /// Successful result type of query
-    type Result;
+    type Result: Serialize + DeserializeOwned;
     /// Error result type of query
     type Error;
 
@@ -21,19 +24,17 @@ pub unsafe trait HydratableQuery {
     fn builder() -> HydratableQueryBuilder<Self::Param, Self::Result, Self::Error>;
 }
 
+type HydratableQueryPhantom<P, R, E> = PhantomData<fn() -> (P, R, E)>;
+
 /// Allows creation of hydratable queries
-pub struct HydratableQueryBuilder<P, R, E> {
+#[derive(Debug)]
+pub struct HydratableQueryBuilder<P, R: Serialize + DeserializeOwned, E> {
     /// Hydration key - automatically set to struct name when using [`HydratableQueryBuilder`]
     key: String,
-    /// Covariant, doesn't drop P
-    _p: PhantomData<fn() -> P>,
-    /// Covariant, doesn't drop R
-    _r: PhantomData<fn() -> R>,
-    /// Covariant, doesn't drop E
-    _e: PhantomData<fn() -> E>,
+    _phantom: HydratableQueryPhantom<P, R, E>,
 }
 
-impl<P, R, E> HydratableQueryBuilder<P, R, E> {
+impl<P, R: Serialize + DeserializeOwned, E: Error> HydratableQueryBuilder<P, R, E> {
     /// Creates a new [`HydratableQueryBuilder`] with a given key
     ///
     /// # Safety
@@ -42,18 +43,13 @@ impl<P, R, E> HydratableQueryBuilder<P, R, E> {
     pub const unsafe fn new(key: String) -> Self {
         Self {
             key,
-            _p: PhantomData,
-            _r: PhantomData,
-            _e: PhantomData,
+            _phantom: PhantomData,
         }
     }
 
-    /// Creates a new query wrapper as a copy of the provided query
-    /// Note: Keeps the same internal state, will be considered as the same query by a [`crate::QueryClient`]
+    /// Creates a new query from the provided query, with a hydratable key
     #[must_use = "Should use return of this function to use a query with a hydration key"]
     pub fn build<'link>(&self, query: &Query<'link, P, R, E>) -> Query<'link, P, R, E> {
-        let mut query = query.clone();
-        query.hydrate_key = Some(self.key.clone());
-        query
+        Query::new_hydratable(query, self.key.clone())
     }
 }

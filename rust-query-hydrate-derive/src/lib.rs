@@ -21,7 +21,7 @@ pub fn hydratable_query_derive(input: TokenStream) -> TokenStream {
     } = syn::parse_macro_input!(input as DeriveInput);
     let ident_name = ident.to_string();
 
-    if !KEYS.lock().insert(ident_name.to_string()) {
+    if !KEYS.lock().insert(ident_name.clone()) {
         return Error::new_spanned(ident, "duplicate hydratable key")
             .into_compile_error()
             .into();
@@ -133,19 +133,20 @@ pub fn hydratable_query_derive(input: TokenStream) -> TokenStream {
     let crate_ = match crate_name("sycamore-query")
         .expect("sycamore-query should be present in Cargo.toml")
     {
-        FoundCrate::Itself => "crate".to_string(),
+        FoundCrate::Itself => "crate".to_owned(),
         FoundCrate::Name(name) => name,
     };
     let crate_ = Ident::new(&crate_, Span::call_site());
 
     quote::quote! {
-        impl HydratableQuery for #ident {
+        // SAFETY: Trait intended to be implemented here
+        unsafe impl HydratableQuery for #ident {
             type Param = #param;
             type Result = #result;
             type Error = #err;
 
             fn builder() -> #crate_::hydrate::HydratableQueryBuilder<Self::Param, Self::Result, Self::Error> {
-                unsafe { #crate_::hydrate::HydratableQueryBuilder::new(#ident_name.to_string()) }
+                unsafe { #crate_::hydrate::HydratableQueryBuilder::new(#ident_name.to_owned()) }
             }
         }
     }
