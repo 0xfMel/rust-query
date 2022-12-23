@@ -1,6 +1,6 @@
 use std::{
     cell::RefCell,
-    error::Error,
+    error::Error as StdError,
     fmt::{self, Debug, Display, Formatter},
     rc::Rc,
     sync::Arc,
@@ -11,17 +11,19 @@ use serde::{Deserialize, Serialize};
 
 use tokio::sync::Notify;
 
+use crate::config::error::Error;
+
 /// Fetch status of a Pending query
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum LoadingStatus {
+pub enum PendingStatus {
     /// See [`QueryStatus::Loading`]
     Loading,
     /// See [`QueryStatus::Paused`]
     Paused,
 }
 
-impl LoadingStatus {
+impl PendingStatus {
     #[allow(unreachable_code, clippy::missing_const_for_fn)]
     #[inline]
     pub(crate) fn get() -> Self {
@@ -68,7 +70,7 @@ pub enum QueryStatus {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum QueryData<R, E> {
     /// There is no data available
-    Loading(LoadingStatus),
+    Pending(PendingStatus),
     /// Query was successful
     Ok(Rc<R>, QueryStatus),
     /// Query returned an error
@@ -79,7 +81,7 @@ impl<R, E> Clone for QueryData<R, E> {
     #[inline]
     fn clone(&self) -> Self {
         match *self {
-            Self::Loading(ref s) => Self::Loading(*s),
+            Self::Pending(ref s) => Self::Pending(*s),
             Self::Ok(ref r, ref s) => Self::Ok(Rc::clone(r), *s),
             Self::Err(ref e, ref s) => Self::Err(Rc::clone(e), *s),
         }
@@ -89,7 +91,7 @@ impl<R, E> Clone for QueryData<R, E> {
 impl<R, E> Default for QueryData<R, E> {
     #[inline]
     fn default() -> Self {
-        Self::Loading(LoadingStatus::get())
+        Self::Pending(PendingStatus::get())
     }
 }
 
@@ -184,16 +186,19 @@ pub enum MutateError<E> {
     NoConnection,
 }
 
-impl<E: Debug> Display for MutateError<E> {
+impl<E: Error> Display for MutateError<E> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match *self {
-            Self::FnError(ref e) => write!(f, "mutation returned an error: {:?}", e),
+            Self::FnError(ref e) => {
+                write!(f, "mutation returned an error: ")?;
+                e.err_fmt(f)
+            }
             Self::NoConnection => write!(f, "no internet connection when attempting mutation"),
         }
     }
 }
 
-impl<E: Debug> Error for MutateError<E> {}
+impl<E: Error> StdError for MutateError<E> {}
 
 impl<E: Debug> Debug for MutateError<E> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {

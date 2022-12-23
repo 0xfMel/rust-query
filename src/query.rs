@@ -1,5 +1,4 @@
 use std::{
-    collections::HashSet,
     fmt::{self, Debug, Formatter},
     future::Future,
     pin::Pin,
@@ -11,9 +10,9 @@ use crate::{
     config::{error::Error, retry::RetryConfig, CacheTime, NetworkMode, SetOption},
     const_default::ConstDefault,
     futures::future_handle::FutureHandle,
+    handle_map::HandleMap,
     listenable::Listenable,
     mutation::MutationOpts,
-    ptr_hash::HashBoxPtr,
     status::QueryData,
     weak_link::WeakLink,
 };
@@ -21,7 +20,7 @@ use crate::{
 pub(crate) struct FetchMeta<'link, R, E> {
     pub(crate) data: Listenable<'link, QueryData<R, E>>,
     pub(crate) id: usize,
-    pub(crate) future_handles: HashSet<HashBoxPtr<FutureHandle<'link>>>,
+    pub(crate) future_handles: HandleMap<FutureHandle<'link>>,
     pub(crate) cache_control: CacheControl<'link>,
 }
 

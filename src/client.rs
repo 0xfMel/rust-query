@@ -4,10 +4,8 @@
 )]
 
 use std::{
-    cell::RefCell,
-    collections::HashSet,
+    cell::{Cell, RefCell},
     fmt::{self, Debug, Formatter},
-    ptr,
     rc::Rc,
     time::Duration,
 };
@@ -25,14 +23,14 @@ use crate::{
     },
     const_default::ConstDefault,
     futures::future_handle,
+    handle_map::HandleMap,
     listenable::Listenable,
     mutation::{MutateMeta, Mutation, MutationCallbacks, MutationOpts},
-    ptr_hash::HashBoxPtr,
     query::{FetchMeta, Query, QueryOpts},
     sleep,
     status::{
-        FetchResult, FetchResultWaited, LoadingStatus, MutateError, MutationData, NoConnection,
-        NoConnectionInner, QueryData, QueryStatus,
+        FetchResult, FetchResultWaited, MutateError, MutationData, NoConnection, NoConnectionInner,
+        PendingStatus, QueryData, QueryStatus,
     },
     weak_link::Entry,
 };
@@ -233,7 +231,24 @@ impl<'link> QueryClient<'link> {
     ) -> FetchResult<R, E> {
         let id = query.inner.link.with_or_else(
             &self.inner.query_cache.link_target,
-            || self.new_fetch_meta(query),
+            || {
+                let cache_time: CacheTime = resolve::resolve_option(
+                    ConfigOption::CacheTime,
+                    &self.inner.opts,
+                    &query.inner.opts,
+                );
+
+                FetchMeta {
+                    data: Listenable::new(QueryData::default()),
+                    id: atomic_id::next(),
+                    future_handles: HandleMap::new(),
+                    cache_control: CacheControl::new(
+                        Rc::downgrade(&self.inner.query_cache),
+                        Rc::downgrade(&query.inner),
+                        cache_time,
+                    ),
+                }
+            },
             |e| e.id,
         );
 
@@ -275,11 +290,11 @@ impl<'link> QueryClient<'link> {
         default_cb: Option<&MutationCallbacks<P, R, E, C>>,
         cb: Option<MutationCallbacks<P, R, E, C>>,
     ) -> Result<Rc<R>, MutateError<E>> {
-        let id = mutation.inner.link.with_or_else(
-            &self.inner.mutation_cache.link_target,
-            || self.new_mutate_meta(mutation),
-            |e| e.id,
-        );
+        // let id = mutation.inner.link.with_or_else(
+        //     &self.inner.mutation_cache.link_target,
+        //     || self.new_mutate_meta(mutation),
+        //     |e| e.id,
+        // );
 
         /*use crate::mutation::MutateMeta;
 
@@ -410,112 +425,6 @@ impl<'link> QueryClient<'link> {
     pub async fn fetch<R, E: Error>(&self, query: &Query<'link, (), R, E>) -> FetchResult<R, E> {
         self.fetch_with_arg(query, ()).await
     }
-
-    /// Subscribe to updates from a client for the given [`Query`]
-    pub fn subscribe_query<P, R, E>(
-        &self,
-        query: &Query<'link, P, R, E>,
-        handler: impl Fn(QueryData<R, E>) + 'link,
-    ) -> Guard<'link> {
-        let handle = query.inner.link.with_or_else(
-            &self.inner.query_cache.link_target,
-            || self.new_fetch_meta(query),
-            |value| {
-                value.cache_control.set_active(true);
-                value.data.add_listener(handler)
-            },
-        );
-
-        Guard {
-            unlisten: Box::new({
-                let this = Rc::clone(&self.inner);
-                let query = Rc::clone(&query.inner);
-                move || {
-                    query.link.with_entry(&this.query_cache.link_target, |e| {
-                        if let Entry::Occupied(mut o) = e {
-                            let o = o.get_mut();
-                            if o.data.remove_listener(&handle) == 0 {
-                                o.cache_control.set_active(false);
-                            }
-                        }
-                    });
-                }
-            }),
-        }
-    }
-
-    /// Subscribe to update from a client for a given [`Mutation`]
-    pub fn subscribe_mutation<P, R, E, C>(
-        &'link self,
-        mutation: &'link Mutation<'link, P, R, E>,
-        handler: impl Fn(MutationData<R, E>) + 'link,
-    ) -> Guard<'link> {
-        /*// TODO
-        let ptr = mutation.link.with_or_else(
-            &self.inner.link_target,
-            || todo!(),
-            |value| {
-                let boxed = Box::new(handler);
-                let ptr: *const () = ptr::addr_of!(*boxed).cast();
-                value.listeners.insert(HashBoxPtr(boxed));
-                ptr
-            },
-        );
-
-        Guard {
-            unlisten: Box::new(move || {
-                mutation.link.with_entry(&self.inner.link_target, |e| {
-                    if let Entry::Occupied(mut o) = e {
-                        o.get_mut()
-                            .listeners
-                            .retain(|e| !ptr::eq(ptr::addr_of!(*e.0).cast(), ptr));
-                    }
-                });
-            }),
-        }*/
-        todo!()
-    }
-
-    pub(crate) fn new_fetch_meta<P, R, E>(
-        &self,
-        query: &Query<'link, P, R, E>,
-    ) -> FetchMeta<'link, R, E> {
-        let cache_time: CacheTime =
-            resolve::resolve_option(ConfigOption::CacheTime, &self.inner.opts, &query.inner.opts);
-
-        FetchMeta {
-            data: Listenable::new(QueryData::default()),
-            id: atomic_id::next(),
-            future_handles: HashSet::new(),
-            cache_control: CacheControl::new(
-                Rc::downgrade(&self.inner.query_cache),
-                Rc::downgrade(&query.inner),
-                cache_time,
-            ),
-        }
-    }
-
-    pub(crate) fn new_mutate_meta<P, R, E>(
-        &self,
-        mutation: &Mutation<'link, P, R, E>,
-    ) -> MutateMeta<'link, R, E> {
-        // TODO
-        /*let cache_time = match self.inner.opts.mutation.cache_time {
-            ConfigOpt::Inherrit => CacheTime::default(),
-            ConfigOpt::Set(v) => v,
-        };*/
-        todo!()
-
-        /*MutateMeta {
-            data: Listenable::new(MutationData::default()),
-            id: atomic_id::next(),
-            cache_control: CacheControl::new(
-                Rc::downgrade(&self.inner.mutation_cache),
-                Rc::downgrade(&mutation.inner),
-                cache_time,
-            ),
-        }*/
-    }
 }
 
 impl<'link> QueryClientInner<'link> {
@@ -535,9 +444,9 @@ impl<'link> QueryClientInner<'link> {
             #[cfg(target_arch = "wasm32")]
             let online = crate::browser::online_handler::is_online();
             #[cfg(target_arch = "wasm32")]
-            let new_status = LoadingStatus::from_online(online);
+            let new_status = PendingStatus::from_online(online);
             #[cfg(not(target_arch = "wasm32"))]
-            let new_status = LoadingStatus::Loading;
+            let new_status = PendingStatus::Loading;
 
             if query
                 .link
@@ -547,8 +456,8 @@ impl<'link> QueryClientInner<'link> {
                     Entry::Occupied(mut o) => {
                         let entry = o.get_mut();
                         match *entry.data {
-                            QueryData::Loading(ref s) if *s != new_status => {
-                                Listenable::set(&mut entry.data, QueryData::Loading(new_status));
+                            QueryData::Pending(ref s) if *s != new_status => {
+                                Listenable::set(&mut entry.data, QueryData::Pending(new_status));
                             }
                             QueryData::Ok(_, ref s) | QueryData::Err(_, ref s)
                                 if *s != new_status.as_query() =>
@@ -557,7 +466,7 @@ impl<'link> QueryClientInner<'link> {
                                     QueryData::Ok(_, ref mut s) | QueryData::Err(_, ref mut s) => {
                                         *s = new_status.as_query();
                                     }
-                                    QueryData::Loading(_) => unreachable!(),
+                                    QueryData::Pending(_) => unreachable!(),
                                 });
                             }
                             _ => {}
@@ -601,15 +510,15 @@ impl<'link> QueryClientInner<'link> {
                     }
                 });
 
-                let boxed = Box::new(handle);
-                let ptr = ptr::addr_of!(boxed);
-                let cleanup = boxed.cleanup();
+                let cleanup = handle.cleanup();
+                let map_handle = Cell::new(None);
 
                 query
                     .link
                     .with_entry(&self.query_cache.link_target, |e| match e {
                         Entry::Occupied(mut o) => {
-                            o.get_mut().future_handles.insert(HashBoxPtr(boxed));
+                            let h = o.get_mut().future_handles.insert(handle);
+                            map_handle.set(Some(h));
                         }
                         Entry::Vacant => {
                             unreachable!();
@@ -621,11 +530,11 @@ impl<'link> QueryClientInner<'link> {
                         query
                             .link
                             .with_entry(&self.query_cache.link_target, |e| match e {
-                                Entry::Occupied(mut o) => {
-                                    o.get_mut()
-                                        .future_handles
-                                        .retain(|e| !ptr::eq(ptr::addr_of!(*e.0).cast(), ptr));
-                                }
+                                Entry::Occupied(mut o) => o.get_mut().future_handles.remove(
+                                    map_handle
+                                        .take()
+                                        .expect("cleanup should not be called twice"),
+                                ),
                                 Entry::Vacant => {}
                             });
                     })
@@ -686,23 +595,5 @@ impl<'link> QueryClientInner<'link> {
             )
             .await
         })
-    }
-}
-
-/// Guard for listener for query changes
-pub struct Guard<'handle> {
-    unlisten: Box<dyn Fn() + 'handle>,
-}
-
-impl Drop for Guard<'_> {
-    #[inline]
-    fn drop(&mut self) {
-        (self.unlisten)();
-    }
-}
-
-impl Debug for Guard<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Guard").finish_non_exhaustive()
     }
 }

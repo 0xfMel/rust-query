@@ -1,17 +1,11 @@
-use std::{
-    collections::HashSet,
-    hash::{Hash, Hasher},
-    mem,
-    ops::Deref,
-    ptr,
-};
+use std::{mem, ops::Deref};
 
-use crate::ptr_hash::HashBoxPtr;
+use crate::handle_map::{Handle, HandleMap};
 
-type ListenerFn<'func, T> = dyn Fn(T) + 'func;
+type ListenerFn<'func, T> = Box<dyn Fn(T) + 'func>;
 
 pub(crate) struct Listener<'func, T> {
-    pub(crate) f: HashBoxPtr<ListenerFn<'func, T>>,
+    pub(crate) f: ListenerFn<'func, T>,
     pub(crate) drop_f: Option<Box<dyn FnOnce() + 'func>>,
 }
 
@@ -23,56 +17,32 @@ impl<T> Drop for Listener<'_, T> {
     }
 }
 
-impl<T> Hash for Listener<'_, T> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.f.hash(state);
-    }
-}
-
-impl<T> PartialEq for Listener<'_, T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.f.eq(&other.f)
-    }
-}
-
-impl<T> Eq for Listener<'_, T> {}
-
 pub(crate) struct Listenable<'func, T> {
     value: T,
-    listeners: HashSet<Listener<'func, T>>,
-}
-
-pub(crate) struct Handle {
-    ptr: *const (),
+    listeners: HandleMap<Listener<'func, T>>,
 }
 
 impl<'func, T> Listenable<'func, T> {
     pub(crate) fn new(value: T) -> Self {
         Self {
             value,
-            listeners: HashSet::new(),
+            listeners: HandleMap::new(),
         }
     }
 
-    pub(crate) fn add_listener(&mut self, func: impl Fn(T) + 'func) -> Handle {
-        let boxed = Box::new(func);
-        let ptr: *const () = ptr::addr_of!(boxed).cast();
+    pub(crate) fn add_listener(&mut self, f: impl Fn(T) + 'func) -> Handle {
         self.listeners.insert(Listener {
-            f: HashBoxPtr(boxed),
+            f: Box::new(f),
             drop_f: None,
-        });
-        Handle { ptr }
+        })
     }
 
     pub(crate) fn add_listener_direct(&mut self, listener: Listener<'func, T>) -> Handle {
-        let ptr: *const () = ptr::addr_of!(listener.f.0).cast();
-        self.listeners.insert(listener);
-        Handle { ptr }
+        self.listeners.insert(listener)
     }
 
-    pub(crate) fn remove_listener(&mut self, handle: &Handle) -> usize {
-        self.listeners
-            .retain(|e| !ptr::eq(ptr::addr_of!(*e.f.0).cast(), handle.ptr));
+    pub(crate) fn remove_listener(&mut self, handle: Handle) -> usize {
+        self.listeners.remove(handle);
         self.listeners.len()
     }
 

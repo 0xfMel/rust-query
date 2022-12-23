@@ -1,4 +1,4 @@
-use std::{future::Future, marker::PhantomData, pin::Pin, sync::Arc};
+use std::{future::Future, pin::Pin, sync::Arc};
 
 use futures::{future, stream::AbortHandle};
 use tokio::sync::Mutex;
@@ -15,7 +15,6 @@ pub(crate) struct CleanupHandle<'handle> {
 pub(crate) struct FutureHandle<'handle> {
     handle: AbortHandle,
     cleanup: Arc<Mutex<CleanupState<'handle>>>,
-    _handle: PhantomData<&'handle ()>,
 }
 
 impl<'handle> FutureHandle<'handle> {
@@ -69,9 +68,5 @@ pub(crate) fn spawn_local_handle<'handle>(
         unsafe { std::mem::transmute(boxed) };
     let (abortable, handle) = future::abortable(extended);
     super::spawn_local(abortable);
-    FutureHandle {
-        handle,
-        cleanup,
-        _handle: PhantomData,
-    }
+    FutureHandle { handle, cleanup }
 }

@@ -6,7 +6,6 @@ use crate::{
     config::CacheTime,
     futures::future_handle,
     listenable::{Listenable, Listener},
-    ptr_hash::HashBoxPtr,
     sleep,
     weak_link::WeakLink,
 };
@@ -89,7 +88,7 @@ impl<'link> CacheControl<'link> {
 
         handle_active(false);
         this.active.add_listener_direct(Listener {
-            f: HashBoxPtr(Box::new(handle_active)),
+            f: Box::new(handle_active),
             drop_f: Some(Box::new(move || drop(fut_handle))),
         });
         this

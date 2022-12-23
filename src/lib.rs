@@ -98,11 +98,14 @@
 #![allow(clippy::redundant_pub_crate)]
 #![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 
+//! TODO
+
 #[cfg(target_arch = "wasm32")]
 mod browser;
 
 mod atomic_id;
 mod futures;
+mod handle_map;
 mod listenable;
 mod ptr_hash;
 mod sleep;
