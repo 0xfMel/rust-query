@@ -1,2 +1,2 @@
-VERY EARLY DEVELOPMENT
-NOT READY FOR PUBLIC USE
+# Archived
+Don't require this library anymore, will probably never revisit.
